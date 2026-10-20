@@ -52,7 +52,7 @@ window.handleLogin = async function(e) {
 
 // Global Log Out Handler
 window.handleLogout = async function() {
-  const confirmLogout = confirm("Are you sure you want to log out?");
+  const confirmLogout = confirm("Are you sure you want logout?");
   if (!confirmLogout) return;
 
   console.log("Signing out user session...");
@@ -219,48 +219,81 @@ async function handleScholarSubmit(e) {
   }
 }
 
-async function loadScholarDashboard() {
+
+async function loadStaffDashboard() {
+  console.log('Loading staff dashboard...');
+
+  // Step 1: Load all accessible submissions
   const { data: submissions, error } = await supabase
     .from('semester_submissions')
     .select('*')
-    .eq('scholar_id', currentUser.id)
     .order('submitted_at', { ascending: false });
 
-  if (error) return;
-
-  const tbody = document.getElementById('scholar-history-tbody');
-  if (!tbody) return;
-
-  tbody.innerHTML = (submissions || []).map(s => `
-    <tr>
-      <td><b>AY ${s.academic_year}</b><br>Semester ${s.semester}</td>
-      <td>GWA: <b>${s.gwa}</b> | Units: ${s.enrolled_units}<br><small style="color:var(--text-muted)">F:${s.failed_count} INC:${s.inc_count} D:${s.dropped_count}</small></td>
-      <td><span class="status-pill status-${s.verification_status.toLowerCase().replace(/\s+/g, '-')}">${s.verification_status}</span></td>
-      <td><span class="status-pill status-${s.compliance_status.toLowerCase().replace(/\s+/g, '-')}">${s.compliance_status}</span></td>
-      <td><span class="status-pill status-${s.renewal_decision.toLowerCase()}">${s.renewal_decision}</span></td>
-      <td><a href="${s.evidence_url}" target="_blank" style="color:var(--primary); font-weight:600;">View Link</a></td>
-    </tr>
-  `).join('');
-
-  if (window.lucide) window.lucide.createIcons();
-}
-
-// 4. STAFF MODULE
-async function loadStaffDashboard() {
-  const { data: submissions, error } = await supabase
-    .from('semester_submissions')
-    .select(`
-      *,
-      profiles:scholar_id(student_id, full_name),
-      scholar_assignments(scholarship_policies(*))
-    `);
-
-  if (error) return;
+  if (error) {
+    console.error('Failed to load submissions:', error);
+    alert('Unable to load submissions: ' + error.message);
+    return;
+  }
 
   submissionsCache = submissions || [];
+
+  // Step 2: Load scholar profiles separately
+  const scholarIds = [
+    ...new Set(submissionsCache.map(s => s.scholar_id).filter(Boolean))
+  ];
+
+  if (scholarIds.length > 0) {
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, student_id, full_name')
+      .in('id', scholarIds);
+
+    if (profileError) {
+      console.error('Failed to load scholar profiles:', profileError);
+    } else {
+      const profileMap = new Map(
+        (profiles || []).map(p => [p.id, p])
+      );
+
+      submissionsCache = submissionsCache.map(s => ({
+        ...s,
+        profiles: profileMap.get(s.scholar_id) || null
+      }));
+    }
+
+    // Step 3: Load scholarship assignments separately
+    const { data: assignments, error: assignmentError } = await supabase
+      .from('scholar_assignments')
+      .select('*, scholarship_policies(*)')
+      .in('scholar_id', scholarIds);
+
+    if (assignmentError) {
+      console.error('Failed to load scholarship assignments:', assignmentError);
+    } else {
+      const assignmentMap = new Map();
+
+      (assignments || []).forEach(a => {
+        if (!assignmentMap.has(a.scholar_id)) {
+          assignmentMap.set(a.scholar_id, []);
+        }
+        assignmentMap.get(a.scholar_id).push(a);
+      });
+
+      submissionsCache = submissionsCache.map(s => ({
+        ...s,
+        scholar_assignments: assignmentMap.get(s.scholar_id) || []
+      }));
+    }
+  }
+
+  console.log('Total submissions:', submissionsCache.length);
+  console.log('Staff submission data:', submissionsCache);
+
   renderMetrics();
   renderStaffTable(submissionsCache);
 }
+
+
 
 function renderMetrics() {
   const mTotal = document.getElementById('m-total');
@@ -268,40 +301,167 @@ function renderMetrics() {
   const mCompliant = document.getElementById('m-compliant');
   const mDeficient = document.getElementById('m-deficient');
 
-  if (mTotal) mTotal.textContent = submissionsCache.length;
-  if (mPending) mPending.textContent = submissionsCache.filter(s => s.verification_status === 'Pending verification').length;
-  if (mCompliant) mCompliant.textContent = submissionsCache.filter(s => s.compliance_status === 'Compliant').length;
-  if (mDeficient) mDeficient.textContent = submissionsCache.filter(s => s.compliance_status === 'With Deficiency').length;
+  if (mTotal) {
+    mTotal.textContent = submissionsCache.length;
+  }
+
+  if (mPending) {
+    mPending.textContent = submissionsCache.filter(
+      s => s.verification_status === 'Pending verification'
+    ).length;
+  }
+
+  if (mCompliant) {
+    mCompliant.textContent = submissionsCache.filter(
+      s => s.compliance_status === 'Compliant'
+    ).length;
+  }
+
+  if (mDeficient) {
+    mDeficient.textContent = submissionsCache.filter(
+      s => s.compliance_status === 'With Deficiency'
+    ).length;
+  }
 }
+
+
 
 function renderStaffTable(data) {
   const tbody = document.getElementById('staff-tbody');
-  if (!tbody) return;
+  if (!tbody) {
+    console.error('Element #staff-tbody was not found in index.html');
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center; padding:20px;">
+          No scholar submissions found.
+        </td>
+      </tr>
+    `;
+    return;
+  }
 
   tbody.innerHTML = data.map(s => {
-    const policy = s.scholar_assignments?.[0]?.scholarship_policies;
-    const defs = s.deficiency_reasons || [];
+    const profile = s.profiles;
+    const assignment = s.scholar_assignments?.[0];
+    const policy = assignment?.scholarship_policies;
+    const policyData = Array.isArray(policy) ? policy[0] : policy;
+
+    const name = profile?.full_name || 'Unknown Scholar';
+    const studentId = profile?.student_id || 'N/A';
+    const program = policyData?.program_name || 'Unassigned';
+
+    const verification = s.verification_status || 'Pending verification';
+    const compliance = s.compliance_status || 'Not Evaluated';
+    const decision = s.renewal_decision || 'Pending';
+    const defs = Array.isArray(s.deficiency_reasons)
+      ? s.deficiency_reasons
+      : [];
+
+    const verificationClass = verification.toLowerCase().replace(/\s+/g, '-');
+    const complianceClass = compliance.toLowerCase().replace(/\s+/g, '-');
+    const decisionClass = decision.toLowerCase();
 
     return `
       <tr>
-        <td><b>${s.profiles ? s.profiles.full_name : 'Unknown Scholar'}</b><br><small style="color:var(--text-muted)">ID: ${s.profiles ? s.profiles.student_id : 'N/A'}</small></td>
-        <td><b>${policy ? policy.program_name : 'Unassigned'}</b></td>
-        <td>GWA: <b>${s.gwa}</b> | Units: ${s.enrolled_units}<br><small style="color:var(--text-muted)">F:${s.failed_count} INC:${s.inc_count} D:${s.dropped_count}</small></td>
         <td>
-          <span class="status-pill status-${s.verification_status.toLowerCase().replace(/\s+/g, '-')}">${s.verification_status}</span><br>
-          <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-top:6px;" onclick="window.verifySubmission('${s.id}')">Verify</button>
+          <b>${name}</b><br>
+          <small style="color:var(--text-muted)">ID: ${studentId}</small>
         </td>
+
+        <td><b>${program}</b></td>
+
         <td>
-          <span class="status-pill status-${s.compliance_status.toLowerCase().replace(/\s+/g, '-')}">${s.compliance_status}</span>
-          ${defs.length ? `<div style="font-size:0.75rem; color:var(--danger); margin-top:4px;">${defs.join(', ')}</div>` : ''}<br>
-          <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-top:6px;" onclick="window.runComplianceCheck('${s.id}')">Evaluate</button>
+          GWA: <b>${s.gwa ?? 'N/A'}</b> |
+          Units: ${s.enrolled_units ?? 'N/A'}<br>
+          <small style="color:var(--text-muted)">
+            F:${s.failed_count ?? 0}
+            INC:${s.inc_count ?? 0}
+            D:${s.dropped_count ?? 0}
+          </small>
         </td>
+
+        
+<td>
+  <div style="margin-bottom:8px;">
+    <strong>Evidence File:</strong><br>
+    ${
+      s.evidence_url
+        ? `<a href="${s.evidence_url}"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-secondary"
+              style="display:inline-block;margin-top:6px;padding:6px 10px;">
+              View Submitted File
+           </a>`
+        : '<span style="color:var(--danger);">No evidence submitted</span>'
+    }
+  </div>
+
+  <div style="margin-bottom:8px;">
+    <span class="status-pill status-${(s.verification_status || 'Pending verification').toLowerCase().replace(/\s+/g, '-')}">
+      ${s.verification_status || 'Pending verification'}
+    </span>
+  </div>
+
+  <button
+    class="btn btn-primary"
+    style="padding:6px 10px;margin-right:4px;"
+    onclick="window.verifySubmission('${s.id}', 'Verified')">
+    Verified
+  </button>
+
+  <button
+    class="btn btn-secondary"
+    style="padding:6px 10px;"
+    onclick="window.verifySubmission('${s.id}', 'Returned')">
+    Returned
+  </button>
+</td>
+
+
         <td>
-          <span class="status-pill status-${s.renewal_decision.toLowerCase()}">${s.renewal_decision}</span><br>
-          <select onchange="window.setDecision('${s.id}', this.value)" style="padding:2px 6px; font-size:0.75rem; margin-top:6px;" ${s.compliance_status !== 'Compliant' ? 'disabled' : ''}>
-            <option value="Pending" ${s.renewal_decision==='Pending'?'selected':''}>Pending</option>
-            <option value="Approved" ${s.renewal_decision==='Approved'?'selected':''}>Approve</option>
-            <option value="Held" ${s.renewal_decision==='Held'?'selected':''}>Hold</option>
+          <span class="status-pill status-${complianceClass}">
+            ${compliance}
+          </span>
+
+          ${defs.length
+            ? `<div style="font-size:0.75rem;color:var(--danger);margin-top:4px;">
+                ${defs.join(', ')}
+              </div>`
+            : ''
+          }
+
+          <br>
+          <button class="btn btn-secondary"
+            style="padding:2px 8px; font-size:0.75rem; margin-top:6px;"
+            onclick="window.runComplianceCheck('${s.id}')">
+            Evaluate
+          </button>
+        </td>
+
+        <td>
+          <span class="status-pill status-${decisionClass}">
+            ${decision}
+          </span><br>
+
+          <select
+            onchange="window.setDecision('${s.id}', this.value)"
+            style="padding:2px 6px;font-size:0.75rem;margin-top:6px;"
+            ${compliance !== 'Compliant' ? 'disabled' : ''}>
+
+            <option value="Pending" ${decision === 'Pending' ? 'selected' : ''}>
+              Pending
+            </option>
+            <option value="Approved" ${decision === 'Approved' ? 'selected' : ''}>
+              Approve
+            </option>
+            <option value="Held" ${decision === 'Held' ? 'selected' : ''}>
+              Hold
+            </option>
           </select>
         </td>
       </tr>
@@ -311,23 +471,63 @@ function renderStaffTable(data) {
   if (window.lucide) window.lucide.createIcons();
 }
 
+
 // Staff Actions
-window.verifySubmission = async (id) => {
+
+window.verifySubmission = async (id, status) => {
+  if (!['Verified', 'Returned'].includes(status)) {
+    alert('Invalid verification status.');
+    return;
+  }
+
   const sub = submissionsCache.find(s => s.id === id);
-  const status = prompt("Set verification status ('Verified' or 'Returned'):", sub?.verification_status || 'Verified');
-  if (!['Verified', 'Returned'].includes(status)) return;
 
-  const reason = prompt("Enter verification reason / notes:", sub?.verification_reason || "");
+  if (!sub) {
+    alert('Submission record not found.');
+    return;
+  }
 
-  const { error } = await supabase.from('semester_submissions')
-    .update({ verification_status: status, verification_reason: reason })
+  if (!sub.evidence_url) {
+    alert('No evidence file was submitted. Please check the submission first.');
+    return;
+  }
+
+  const confirmAction = confirm(
+    `Are you sure you want to mark this submission as ${status}?`
+  );
+
+  if (!confirmAction) return;
+
+  const { error } = await supabase
+    .from('semester_submissions')
+    .update({
+      verification_status: status
+    })
     .eq('id', id);
 
-  if (!error) {
-    await logAuditHistory(id, `VERIFICATION_${status.toUpperCase()}`, `Notes: ${reason}`);
-    await loadStaffDashboard();
+  if (error) {
+    console.error('Verification update error:', error);
+    alert('Failed to update verification: ' + error.message);
+    return;
   }
+
+  const { error: auditError } = await supabase
+    .from('evaluation_history')
+    .insert({
+      submission_id: id,
+      performed_by: currentUser.id,
+      action: `VERIFICATION_${status.toUpperCase()}`,
+      notes: `Evidence marked as ${status}.`
+    });
+
+  if (auditError) {
+    console.error('Audit history error:', auditError);
+  }
+
+  alert(`Submission marked as ${status}.`);
+  await loadStaffDashboard();
 };
+
 
 window.runComplianceCheck = async (id) => {
   const sub = submissionsCache.find(s => s.id === id);
@@ -389,18 +589,32 @@ async function logAuditHistory(submissionId, action, notes) {
   });
 }
 
+
 function filterStaffTable() {
-  const query = (document.getElementById('staff-search')?.value || '').toLowerCase().trim();
-  const statusFilter = document.getElementById('staff-filter-status')?.value || 'ALL';
+  const query = (
+    document.getElementById('staff-search')?.value || ''
+  ).toLowerCase().trim();
+
+  const statusFilter =
+    document.getElementById('staff-filter-status')?.value || 'ALL';
 
   const filtered = submissionsCache.filter(s => {
-    const matchQuery = (s.profiles?.full_name.toLowerCase() || '').includes(query) || (s.profiles?.student_id.toLowerCase() || '').includes(query);
-    const matchStatus = statusFilter === 'ALL' || s.compliance_status === statusFilter;
+    const name = (s.profiles?.full_name || '').toLowerCase();
+    const studentId = (s.profiles?.student_id || '').toLowerCase();
+
+    const matchQuery =
+      name.includes(query) || studentId.includes(query);
+
+    const matchStatus =
+      statusFilter === 'ALL' ||
+      s.compliance_status === statusFilter;
+
     return matchQuery && matchStatus;
   });
 
   renderStaffTable(filtered);
 }
+
 
 window.switchView = (view) => {
   const viewScholar = document.getElementById('view-scholar');
