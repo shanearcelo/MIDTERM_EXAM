@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scholarship Monitoring and Academic Compliance System</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- AUTHENTICATION SCREEN -->
+  <div id="auth-screen" style="width: 100vw; height: 100vh; display: grid; place-items: center; background: #0f172a;">
+    <div class="data-card" style="width: 100%; max-width: 400px; padding: 32px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="width: 48px; height: 48px; background: #2563eb; border-radius: 12px; display: grid; place-items: center; color: white; margin: 0 auto 12px auto;">
+          <i data-lucide="shield-check"></i>
+        </div>
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #0f172a;">Scholar Portal Login</h2>
+        <p style="font-size: 0.85rem; color: #64748b; margin-top: 4px;">Sign in to access your dashboard</p>
+      </div>
+      <form id="auth-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="auth-email" placeholder="student@university.edu" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn btn-primary"
+        style="width: 100%; margin-top: 8px;">
+  Sign In
+</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP CONTAINER -->
+  <div id="app-container" class="hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="award"></i>
+        <button type="button" id="btn-logout" class="btn-logout" onclick="handleLogout()">
+  Log Out
+</button>
+        <span>Scholar Portal</span>
+      </div>
+      <nav style="display: flex; flex-direction: column; gap: 4px;">
+        <div id="nav-scholar" class="nav-item active" onclick="window.switchView('scholar')">
+          <i data-lucide="file-text"></i>
+          <span>Scholar Portal</span>
+        </div>
+        <div id="nav-staff" class="nav-item" onclick="window.switchView('staff')">
+          <i data-lucide="users"></i>
+          <span>Staff Dashboard</span>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <header class="header">
+        <div>
+          <h1 id="header-view-title" style="font-size: 1.25rem; font-weight: 700;">Scholar Portal</h1>
+          <p id="header-view-desc" style="font-size: 0.85rem; color: var(--text-muted);">Manage semester submissions and track renewal status</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div id="user-avatar" class="avatar">U</div>
+          <div>
+            <div id="user-name-display" style="font-weight: 600; font-size: 0.875rem;">Loading User...</div>
+            <div id="user-role-display" style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">SCHOLAR</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- SCHOLAR VIEW -->
+      <div id="view-scholar">
+        <div class="data-card" style="margin-bottom: 24px;">
+          <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 16px;">Submit Semester Academic Summary</h3>
+          <form id="submission-form" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+            <div class="form-group">
+              <label>Academic Period</label>
+              <select id="sub-period" required>
+                <option value="2026-2027|1">AY 2026-2027 Semester 1</option>
+                <option value="2026-2027|2">AY 2026-2027 Semester 2</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>GWA (1.00 - 5.00)</label>
+              <input type="number" id="sub-gwa" step="0.01" min="1.00" max="5.00" placeholder="1.75" required>
+            </div>
+            <div class="form-group">
+              <label>Enrolled Units</label>
+              <input type="number" id="sub-units" min="0" placeholder="18" required>
+            </div>
+            <div class="form-group">
+              <label>Failed Subjects</label>
+              <input type="number" id="sub-failed" min="0" value="0" required>
+            </div>
+            <div class="form-group">
+              <label>Incomplete (INC)</label>
+              <input type="number" id="sub-inc" min="0" value="0" required>
+            </div>
+            <div class="form-group">
+              <label>Dropped Subjects</label>
+              <input type="number" id="sub-dropped" min="0" value="0" required>
+            </div>
+            <div class="form-group" style="grid-column: span 3;">
+              <label>Grade Document Reference (URL)</label>
+              <input type="url" id="sub-evidence" placeholder="https://drive.google.com/file/d/..." required>
+            </div>
+            <div style="grid-column: span 3;">
+              <button type="submit" class="btn btn-primary">Submit Grade Summary</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="data-card">
+          <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 16px;">Submission History</h3>
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Academic Metrics</th>
+                  <th>Verification</th>
+                  <th>Compliance</th>
+                  <th>Renewal</th>
+                  <th>Evidence</th>
+                </tr>
+              </thead>
+              <tbody id="scholar-history-tbody">
+                <!-- Dynamic Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAFF VIEW -->
+      <div id="view-staff" class="hidden">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+          <div class="metric-card">
+            <div class="label">Total Submissions</div>
+            <div id="m-total" class="value">0</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Pending Verification</div>
+            <div id="m-pending" class="value" style="color: var(--warning);">0</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Compliant</div>
+            <div id="m-compliant" class="value" style="color: var(--success);">0</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">With Deficiency</div>
+            <div id="m-deficient" class="value" style="color: var(--danger);">0</div>
+          </div>
+        </div>
+
+        <div class="data-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 1rem; font-weight: 600;">Scholar Academic Evaluation</h3>
+            <div style="display: flex; gap: 12px;">
+              <input type="text" id="staff-search" placeholder="Search ID or Name..." style="padding: 6px 12px; font-size: 0.85rem; width: 200px;">
+              <select id="staff-filter-status" style="padding: 6px 12px; font-size: 0.85rem;">
+                <option value="ALL">All Compliance Statuses</option>
+                <option value="Compliant">Compliant</option>
+                <option value="With Deficiency">With Deficiency</option>
+                <option value="Not Evaluated">Not Evaluated</option>
+              </select>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Scholar Details</th>
+                  <th>Program</th>
+                  <th>Metrics</th>
+                  <th>Evidence Verification</th>
+                  <th>Policy Evaluation</th>
+                  <th>Renewal Action</th>
+                </tr>
+              </thead>
+              <tbody id="staff-tbody">
+                <!-- Dynamic Staff Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
