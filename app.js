@@ -220,6 +220,88 @@ async function handleScholarSubmit(e) {
 }
 
 
+async function loadScholarDashboard() {
+    const { data: submissions, error } = await supabase
+        .from('semester_submissions')
+        .select('*')
+        .eq('scholar_id', currentUser.id)
+        .order('submitted_at', { ascending: false });
+
+    if (error) {
+        console.error('Scholar dashboard error:', error);
+        throw error;
+    }
+
+    submissionsCache = submissions || [];
+
+    renderScholarHistory(submissionsCache);
+}
+
+function renderScholarHistory(submissions) {
+    const tbody = document.getElementById('scholar-history-tbody');
+
+    if (!tbody) {
+        console.error('Submission History table body not found.');
+        return;
+    }
+
+    if (!submissions || submissions.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align:center; padding:20px;">
+                    No submission history found.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = submissions.map(s => {
+        const verification = s.verification_status || 'Pending verification';
+        const compliance = s.compliance_status || 'Not Evaluated';
+        const renewal = s.renewal_decision || 'Pending';
+
+        const period = `
+            AY ${escapeHTML(s.academic_year || 'N/A')}
+            Semester ${escapeHTML(String(s.semester ?? 'N/A'))}
+        `;
+
+        const evidence = s.evidence_url
+            ? `<a href="${escapeHTML(s.evidence_url)}"
+                  target="_blank"
+                  rel="noopener noreferrer">View Evidence</a>`
+            : 'No evidence submitted';
+
+        return `
+            <tr>
+                <td>${period}</td>
+                <td>
+                    GWA: ${escapeHTML(String(s.gwa ?? 'N/A'))}<br>
+                    Units: ${escapeHTML(String(s.enrolled_units ?? 'N/A'))}<br>
+                    Failed: ${escapeHTML(String(s.failed_count ?? 0))}<br>
+                    INC: ${escapeHTML(String(s.inc_count ?? 0))}<br>
+                    Dropped: ${escapeHTML(String(s.dropped_count ?? 0))}
+                </td>
+                <td>${escapeHTML(verification)}</td>
+                <td>${escapeHTML(compliance)}</td>
+                <td>${escapeHTML(renewal)}</td>
+                <td>${evidence}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function escapeHTML(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[char]);
+}
+
+
 async function loadStaffDashboard() {
   console.log('Loading staff dashboard...');
 
